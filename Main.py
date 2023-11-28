@@ -1,5 +1,4 @@
 import os
-import pip
 import PIL.Image as PIL
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,6 +6,8 @@ import cv2
 import keyboard
 import json
 from time import strftime, gmtime
+
+
 
 class VideoCaptureProcessor:
     """
@@ -17,20 +18,61 @@ class VideoCaptureProcessor:
     red_text = "\033[91m"
     reset_color = "\033[0m"
 
+    __version__ = "0.1.2"
+
     def __init__(self):
+        # Camera index
+        self.camera_index = []
+
         # Initialize Video Capture
-        self.cap = cv2.VideoCapture(0)
         self.frame = None
         self.frame_rgb = None
         self.means_rgb = None
+        self.is_running = 0
 
+        # Gets the Available Cameras
+        self.available_cameras = self.get_available_cameras()
+        self.select_camera()
+
+        # Figure
+        self.fig = plt.figure()
+
+        # Cameras Resolution
+        self.width, self.height = cv2.VideoCapture(self.camera_index).get(3), cv2.VideoCapture(self.camera_index).get(4)
+
+    def select_camera(self):
+        print()
+
+        i = 0
+        for camera in self.available_cameras:
+            i += 1
+            print(f'{i}.    Camera {camera}')
+
+        self.camera_index = int(input("What camera do you want to use? ")) - 1
+        self.cap = cv2.VideoCapture(self.available_cameras[self.camera_index])
+
+    def get_available_cameras(self):
+        available_cameras = []
+        for i in range(10):  # Try to access up to 10 cameras (adjust as needed)
+            cap = cv2.VideoCapture(i)
+            if cap.isOpened():
+                available_cameras.append(i)
+                cap.release()
+        return available_cameras
 
     def capture_and_process_video(self):
+
+        # Get the Capture
+        self.cap = cv2.VideoCapture(self.available_cameras[self.camera_index])
+
+        # Prints the Resolution
+        print(f"Resolution: {self.width}, {self.height}")
+
         # Defines frame
         ret, self.frame = self.cap.read()
-        self.cap = cv2.VideoCapture(0)
 
         # Sets the Style
+        self.fig.set_facecolor('black')
         plt.style.use('dark_background')
 
         # Check if the video capture was opened successfully
@@ -44,6 +86,7 @@ class VideoCaptureProcessor:
 
         while True:
             ret, self.frame = self.cap.read()
+            self.frame = cv2.rotate(self.frame, cv2.ROTATE_180)
 
             if not ret:
                 break
@@ -61,47 +104,53 @@ class VideoCaptureProcessor:
             blue_values.append(blue_mean)
             means_rgb.append([red_mean, green_mean, blue_mean])
 
+            self.fig.clf() # Clears the frame
+
             # Display the frame and the color channel plots
-            plt.clf()
+            ax_img = self.fig.add_subplot(2, 1, 1)
+            ax_img.set_xlim(0, self.width)
+            ax_img.set_ylim(0, self.height)
+            ax_img.imshow(self.frame_rgb)
+            ax_img.axis('off')
 
-            plt.subplot(2, 1, 1)
-            plt.imshow(self.frame_rgb)
-            plt.axis('off')
-
-            plt.subplot(2, 1, 2)
-            plt.plot(red_values[-16:], color="red", label="Red")
-            plt.plot(green_values[-16:], color="green", label="Green")
-            plt.plot(blue_values[-16:], color="blue", label="Blue")
+            # Displays the Graph
+            ax_rgb = self.fig.add_subplot(2, 1, 2)
+            ax_rgb.plot(red_values[-16:], color="red", label="Red")
+            ax_rgb.plot(green_values[-16:], color="green", label="Green")
+            ax_rgb.plot(blue_values[-16:], color="blue", label="Blue")
 
             # Display Numbers
-            plt.text(15, red_values[-1], np.round(red_values[-1]))
-            plt.text(15, green_values[-1], np.round(green_values[-1]))
-            plt.text(15, blue_values[-1], np.round(blue_values[-1]))
+            ax_rgb.text(15, red_values[-1], np.round(red_values[-1]), color='white')
+            ax_rgb.text(15, green_values[-1], np.round(green_values[-1]), color='white')
+            ax_rgb.text(15, blue_values[-1], np.round(blue_values[-1]), color='white')
 
             # Display the mean values
-            plt.figtext(0.02, 0.96, f'Means: [{red_mean}, {green_mean}, {blue_mean}]')
+            plt.figtext(0.02, 0.96, f'Means: [{red_mean}, {green_mean}, {blue_mean}]', color='white')
             #plt.figtext(0.02, 0.92, f'Max: [{red_max}, {green_max}, {blue_max}]')
             #plt.figtext(0.02, 0.88, f'Min: [{red_min}, {green_min}, {blue_min}]')
 
             if keyboard.is_pressed('q'):
+                self.release_capture()
                 self.stop()
+
             elif keyboard.is_pressed('w'):
                 VideoCaptureProcessor.save_data(means_rgb, self.frame_rgb, self.frame)
+
             elif keyboard.is_pressed('c' or 'g'):
                 self.release_capture()
                 self.get_pixel_position()
                 break
 
             # Pause briefly to display the frame
-            plt.pause(0.0001)
+            plt.pause(0.00000001)
 
 
     def save_data(means_rgb, frame_rgb, frame):
         # Define the JSON format
         data = {
             "frames": len(means_rgb),
-            "means_rgb": f"{means_rgb}",
-            "raw_image": f"{frame_rgb.tolist()}"
+            "means_rgb": means_rgb,
+            "raw_image": frame_rgb.tolist()
         }
 
         # Get the time
@@ -153,7 +202,10 @@ class VideoCaptureProcessor:
         # Release the video capture here
         self.release_capture()
 
-        # Reruns the Main Program
+        # Open a new Matplotlib figure
+        self.fig = plt.figure()
+
+        # Rerun the main program
         self.capture_and_process_video()
 
     def release_capture(self):
@@ -162,9 +214,7 @@ class VideoCaptureProcessor:
     def stop(self):
         if self.cap.isOpened():
             self.release_capture()
-        plt.close()
-        quit(0)
-
+        plt.close(fig=self.fig)
 
 if __name__ == "__main__":
     main_instance = VideoCaptureProcessor()
